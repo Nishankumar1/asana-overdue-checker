@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 ASANA_PAT = os.getenv('ASANA_PAT')
 PROJECT_GID = os.getenv('ASANA_PROJECT_GID')
-CUSTOM_FIELD_GID = os.getenv('CUSTOM_FIELD_GID') 
+CUSTOM_FIELD_GID = os.getenv('CUSTOM_FIELD_GID')
 OVERDUE_OPTION_GID = os.getenv('OVERDUE_OPTION_GID')
 
 if not all([ASANA_PAT, PROJECT_GID, CUSTOM_FIELD_GID, OVERDUE_OPTION_GID]):
@@ -19,14 +19,12 @@ TASKS_URL = f"https://app.asana.com/api/1.0/projects/{PROJECT_GID}/tasks"
 TODAY = datetime.now(timezone.utc).date()
 
 def is_task_overdue(due_date_str):
-    """Checks if a task's due date string is in the past."""
     if not due_date_str:
         return False
     due_date = datetime.strptime(due_date_str, "%Y-%m-%d").date()
     return due_date < TODAY
 
 def get_subtasks(parent_task_gid):
-    """Fetches all subtasks for a given parent task."""
     subtask_url = f"https://app.asana.com/api/1.0/tasks/{parent_task_gid}/subtasks"
     params = {"opt_fields": "name,due_on,completed"}
     response = requests.get(subtask_url, headers=HEADERS, params=params)
@@ -34,7 +32,6 @@ def get_subtasks(parent_task_gid):
     return response.json()['data']
 
 def set_task_progress_to_overdue(task_gid):
-    """Updates the custom field of a task to the 'Overdue' status."""
     update_url = f"https://app.asana.com/api/1.0/tasks/{task_gid}"
     payload = {
         "data": {
@@ -48,7 +45,6 @@ def set_task_progress_to_overdue(task_gid):
     print(f"  - Set 'Task Progress' to Overdue for task GID {task_gid}.")
 
 def main():
-    """Main function to fetch and process tasks."""
     print("Starting Asana overdue task check...")
     
     params = {
@@ -69,9 +65,11 @@ def main():
             
             is_already_overdue = False
             for field in task['custom_fields']:
-                if field['gid'] == CUSTOM_FIELD_GID and field.get('enum_value', {}).get('gid') == OVERDUE_OPTION_GID:
-                    is_already_overdue = True
-                    break
+                if field['gid'] == CUSTOM_FIELD_GID:
+                    enum_value = field.get('enum_value')
+                    if enum_value and enum_value.get('gid') == OVERDUE_OPTION_GID:
+                        is_already_overdue = True
+                        break
             
             if is_already_overdue:
                 continue
@@ -101,3 +99,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
