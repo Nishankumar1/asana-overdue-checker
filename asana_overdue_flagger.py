@@ -4,10 +4,11 @@ from datetime import datetime, timezone
 
 ASANA_PAT = os.getenv('ASANA_PAT')
 PROJECT_GID = os.getenv('ASANA_PROJECT_GID')
-OVERDUE_FLAG = "🚩 OVERDUE"
+CUSTOM_FIELD_GID = os.getenv('CUSTOM_FIELD_GID') 
+OVERDUE_OPTION_GID = os.getenv('OVERDUE_OPTION_GID')
 
-if not ASANA_PAT or not PROJECT_GID:
-    print("Error: Set ASANA_PAT and ASANA_PROJECT_GID environment variables before running.")
+if not all([ASANA_PAT, PROJECT_GID, CUSTOM_FIELD_GID, OVERDUE_OPTION_GID]):
+    print("Error: Ensure ASANA_PAT, PROJECT_GID, CUSTOM_FIELD_GID, and OVERDUE_OPTION_GID are set.")
     exit(1)
 
 HEADERS = {
@@ -32,13 +33,19 @@ def get_subtasks(parent_task_gid):
     response.raise_for_status()
     return response.json()['data']
 
-def update_task_name(task_gid, new_name):
-    """Updates the name of a specific task."""
+def set_task_progress_to_overdue(task_gid):
+    """Updates the custom field of a task to the 'Overdue' status."""
     update_url = f"https://app.asana.com/api/1.0/tasks/{task_gid}"
-    payload = {"data": {"name": new_name}}
+    payload = {
+        "data": {
+            "custom_fields": {
+                CUSTOM_FIELD_GID: OVERDUE_OPTION_GID
+            }
+        }
+    }
     response = requests.put(update_url, headers=HEADERS, json=payload)
     response.raise_for_status()
-    print(f"  - Updated task GID {task_gid} with new name: '{new_name}'")
+    print(f"  - Set 'Task Progress' to Overdue for task GID {task_gid}.")
 
 def main():
     """Main function to fetch and process tasks."""
@@ -46,12 +53,12 @@ def main():
     
     params = {
         "completed_since": "now",
-        "opt_fields": "name,due_on,completed,num_subtasks"
+        "opt_fields": "name,due_on,completed,num_subtasks,custom_fields"
     }
     
     try:
         response = requests.get(TASKS_URL, headers=HEADERS, params=params)
-        response.raise_for_status() 
+        response.raise_for_status()
         tasks = response.json()['data']
         
         print(f"Found {len(tasks)} non-completed tasks to check.")
@@ -60,25 +67,30 @@ def main():
             task_gid = task['gid']
             task_name = task['name']
             
-            if OVERDUE_FLAG in task_name:
+            is_already_overdue = False
+            for field in task['custom_fields']:
+                if field['gid'] == CUSTOM_FIELD_GID and field.get('enum_value', {}).get('gid') == OVERDUE_OPTION_GID:
+                    is_already_overdue = True
+                    break
+            
+            if is_already_overdue:
                 continue
 
             parent_overdue = is_task_overdue(task.get('due_on'))
-            subtask_overdue = False 
+            subtask_overdue = False
 
-            if task['num_subtasks'] > 0:
+            if not parent_overdue and task['num_subtasks'] > 0:
                 print(f"-> Checking subtasks for '{task_name}'...")
                 subtasks = get_subtasks(task_gid)
                 for subtask in subtasks:
                     if not subtask['completed'] and is_task_overdue(subtask.get('due_on')):
                         print(f"  - Found overdue subtask: '{subtask['name']}'")
                         subtask_overdue = True
-                        break 
+                        break
             
             if parent_overdue or subtask_overdue:
-                print(f"-> Flagging '{task_name}' as overdue.")
-                new_name = f"{OVERDUE_FLAG} {task_name}"
-                update_task_name(task_gid, new_name)
+                print(f"-> Flagging '{task_name}' by setting Custom Field to Overdue.")
+                set_task_progress_to_overdue(task_gid)
 
     except requests.exceptions.RequestException as e:
         print(f"An API error occurred: {e}")
